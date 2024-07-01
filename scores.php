@@ -44,13 +44,13 @@ function calculateRewards($reward1, $reward2, $reward3, $players) {
 
     // Assign rewards to players
     foreach ($rank1 as &$player) {
-        $player['reward'] = $rewardPerPerson1;
+        $player['reward'] = round($rewardPerPerson1, 2);
     }
     foreach ($rank2 as &$player) {
-        $player['reward'] = $rewardPerPerson2;
+        $player['reward'] = round($rewardPerPerson2, 2);
     }
     foreach ($rank3 as &$player) {
-        $player['reward'] = $rewardPerPerson3;
+        $player['reward'] = round($rewardPerPerson3, 2);
     }
 
     // Merge all players back into one array
@@ -60,34 +60,34 @@ function calculateRewards($reward1, $reward2, $reward3, $players) {
 }
 
 // Sample data
-$reward1 = 100; // Reward for 1st place
-$reward2 = 70; // Initial reward for 2nd place
-$reward3 = 40; // Initial reward for 3rd place
+$reward1 = 450; // Reward for 1st place
+$reward2 = 200; // Initial reward for 2nd place
+$reward3 = 150; // Initial reward for 3rd place
 
 $players = [
-    ['name' => 'Player1', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player2', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player3', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player4', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player5', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player6', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player7', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player8', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player9', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player10', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player11', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player12', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player13', 'points' => 48, 'rank' => 1],
-    ['name' => 'Player14', 'points' => 46, 'rank' => 2],
-    ['name' => 'Player15', 'points' => 45, 'rank' => 2],
-    ['name' => 'Player16', 'points' => 43, 'rank' => 3],
-    ['name' => 'Player17', 'points' => 42, 'rank' => 3]
+    ['name' => 'Player1', 'rank' => 1],
+    ['name' => 'Player2', 'rank' => 1],
+    ['name' => 'Player3', 'rank' => 1],
+    ['name' => 'Player4', 'rank' => 1],
+    ['name' => 'Player5', 'rank' => 1],
+    ['name' => 'Player6', 'rank' => 1],
+    ['name' => 'Player7', 'rank' => 1],
+    ['name' => 'Player8', 'rank' => 1],
+    ['name' => 'Player9', 'rank' => 1],
+    ['name' => 'Player10', 'rank' => 1],
+    ['name' => 'Player11', 'rank' => 1],
+    ['name' => 'Player12', 'rank' => 1],
+    ['name' => 'Player13', 'rank' => 1],
+    ['name' => 'Player14', 'rank' => 2],
+    ['name' => 'Player15', 'rank' => 2],
+    ['name' => 'Player16', 'rank' => 3],
+    ['name' => 'Player17', 'rank' => 3]
 ];
 
 $rewardedPlayers = calculateRewards($reward1, $reward2, $reward3, $players);
 
 // Display the results
 foreach ($rewardedPlayers as $player) {
-    echo "Name: {$player['name']}, Points: {$player['points']}, Rank: {$player['rank']}, Reward: {$player['reward']} PLN\n";
+    echo "Name: {$player['name']}, Rank: {$player['rank']}, Reward: {$player['reward']} PLN\n";
 }
 ?>
