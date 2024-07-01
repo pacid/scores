@@ -1,56 +1,85 @@
 <?php
-function calculateRewards($reward1, $reward2, $reward3, $players) {
-    // Initialize arrays for storing players based on their ranks
-    $rank1 = [];
-    $rank2 = [];
-    $rank3 = [];
-
-    // Distribute players based on their rank
-    foreach ($players as $player) {
-        if ($player['rank'] == 1) {
-            $rank1[] = $player;
-        } elseif ($player['rank'] == 2) {
-            $rank2[] = $player;
-        } elseif ($player['rank'] == 3) {
-            $rank3[] = $player;
+function calculateRewards(float $reward1, float $reward2, float $reward3, $players) {
+        // Initialize arrays for storing players based on their ranks
+        $rank1 = [];
+        $rank2 = [];
+        $rank3 = [];
+        
+      
+        // Distribute players based on their rank
+        foreach ($players as $player) {
+            if ($player['rank'] == 1) {
+                $rank1[] = $player;
+            } elseif ($player['rank'] == 2) {
+                $rank2[] = $player;
+            } elseif ($player['rank'] == 3) {
+                $rank3[] = $player;
+            }
         }
-    }
+        
+       // Calculate the reward per person for each rank
+        $rewardPerPerson1 = $reward1 / count($rank1);
+        $rewardPerPerson2 = $reward2 / count($rank2);
+        $rewardPerPerson3 = $reward3 / count($rank3);
 
-    // Calculate the reward per person for each rank
-    $rewardPerPerson1 = $reward1 / count($rank1);
-    $rewardPerPerson2 = $reward2 / count($rank2);
-    $rewardPerPerson3 = $reward3 / count($rank3);
 
-    // Adjust rewards to maintain the 30% rule
-    $isCriteriaMet = false;
-    while (!$isCriteriaMet) {
+
+    $i = 0;
+    do {
+        echo "rewards full, iteration:" . $i .  " : 1: " . $reward1 . ' 2: ' . $reward2 . ' 3: ' . round($reward3,2) . ' sum:' . round(($reward1+$reward2+$reward3),2) . "\n"; 
+
         $isCriteriaMet = true;
 
-        // Check and adjust the reward ratio between rank 1 and rank 2
-        if (!($rewardPerPerson1 > $rewardPerPerson2 * 1.3)) {
-            $rewardPerPerson1 += $rewardPerPerson2 * 0.2 + $rewardPerPerson3 * 0.1;
-            $rewardPerPerson2 -= $rewardPerPerson2 * 0.2;
-            $rewardPerPerson3 -= $rewardPerPerson3 * 0.1;
-            $isCriteriaMet = false;
-        }
+        $takeFromReward2 = 0;
+        $takeFromReward3 = 0;
+        
+        // Check if the 30% rule is maintained
+        if (!($rewardPerPerson1 > ($rewardPerPerson2 * 1.3))) {
+            // Adjust rewards if criteria are not met
+            $takeFromReward2 = $reward2 * 0.15;
+            $takeFromReward3 = $reward3 * 0.05;
+          
 
-        // Check and adjust the reward ratio between rank 2 and rank 3
-        if (!($rewardPerPerson2 > $rewardPerPerson3 * 1.3)) {
-            $rewardPerPerson2 += $rewardPerPerson3 * 0.1;
-            $rewardPerPerson3 -= $rewardPerPerson3 * 0.1;
+            $reward2 -= $takeFromReward2; // Reduce 2nd place reward by 20%
+            $reward3 -= $takeFromReward3; // Reduce 3rd place reward by 10%
+            $reward1 = $reward1 + $takeFromReward2 + $takeFromReward3;
+            
+            
+            $rewardPerPerson1 = $reward1 / count($rank1);
+            $rewardPerPerson2 = $reward2 / count($rank2);
+            $rewardPerPerson3 = $reward3 / count($rank3);
             $isCriteriaMet = false;
+        } 
+      $i++;
+    } while (!$isCriteriaMet);
+    
+    
+    do {
+        // Check if the 30% rule is maintained
+        if (!($rewardPerPerson2 > $rewardPerPerson3 * 1.3)) {
+            // Adjust rewards if criteria are not met
+            $reward2 += $reward3 * 0.10;
+            
+            $reward3 -=  $reward3 * 0.10; // Reduce 3rd place reward by 10%
+            
+            $rewardPerPerson1 = $reward1 / count($rank1);
+            $rewardPerPerson2 = $reward2 / count($rank2);
+            $rewardPerPerson3 = $reward3 / count($rank3);
+            $isCriteriaMet = false;
+        } else {
+          $isCriteriaMet = true;
         }
-    }
+    } while(!$isCriteriaMet);
 
     // Assign rewards to players
     foreach ($rank1 as &$player) {
-        $player['reward'] = round($rewardPerPerson1, 2);
+        $player['reward'] = $rewardPerPerson1;
     }
     foreach ($rank2 as &$player) {
-        $player['reward'] = round($rewardPerPerson2, 2);
+        $player['reward'] = $rewardPerPerson2;
     }
     foreach ($rank3 as &$player) {
-        $player['reward'] = round($rewardPerPerson3, 2);
+        $player['reward'] = $rewardPerPerson3;
     }
 
     // Merge all players back into one array
@@ -65,29 +94,33 @@ $reward2 = 200; // Initial reward for 2nd place
 $reward3 = 150; // Initial reward for 3rd place
 
 $players = [
-    ['name' => 'Player1', 'rank' => 1],
-    ['name' => 'Player2', 'rank' => 1],
-    ['name' => 'Player3', 'rank' => 1],
-    ['name' => 'Player4', 'rank' => 1],
-    ['name' => 'Player5', 'rank' => 1],
-    ['name' => 'Player6', 'rank' => 1],
-    ['name' => 'Player7', 'rank' => 1],
-    ['name' => 'Player8', 'rank' => 1],
-    ['name' => 'Player9', 'rank' => 1],
-    ['name' => 'Player10', 'rank' => 1],
-    ['name' => 'Player11', 'rank' => 1],
-    ['name' => 'Player12', 'rank' => 1],
-    ['name' => 'Player13', 'rank' => 1],
-    ['name' => 'Player14', 'rank' => 2],
-    ['name' => 'Player15', 'rank' => 2],
-    ['name' => 'Player16', 'rank' => 3],
-    ['name' => 'Player17', 'rank' => 3]
+    ['name' => 'Player1', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player2', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player3', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player4', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player5', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player6', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player7', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player8', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player9', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player10', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player11', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player12', 'points' => 50, 'rank' => 1],
+    ['name' => 'Player13', 'points' => 48, 'rank' => 1],
+    ['name' => 'Player14', 'points' => 46, 'rank' => 2],
+    ['name' => 'Player15', 'points' => 45, 'rank' => 2],
+    ['name' => 'Player16', 'points' => 43, 'rank' => 3],
+    ['name' => 'Player17', 'points' => 42, 'rank' => 3]
 ];
 
 $rewardedPlayers = calculateRewards($reward1, $reward2, $reward3, $players);
 
+$sum= 0;
 // Display the results
 foreach ($rewardedPlayers as $player) {
-    echo "Name: {$player['name']}, Rank: {$player['rank']}, Reward: {$player['reward']} PLN\n";
+    echo "Name: {$player['name']}, Points: {$player['points']}, Rank: {$player['rank']}, Reward: {$player['reward']} PLN\n";
+    $sum += $player['reward'];
 }
+
+echo "\n" . $sum;
 ?>
