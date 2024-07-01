@@ -26,7 +26,7 @@ function calculateRewards(float $reward1, float $reward2, float $reward3, $playe
 
     $i = 0;
     do {
-        echo "rewards full, iteration:" . $i .  " : 1: " . $reward1 . ' 2: ' . $reward2 . ' 3: ' . round($reward3,2) . ' sum:' . round(($reward1+$reward2+$reward3),2) . "\n"; 
+       // echo "rewards full, iteration:" . $i .  " : 1: " . $reward1 . ' 2: ' . $reward2 . ' 3: ' . round($reward3,2) . ' sum:' . round(($reward1+$reward2+$reward3),2) . "\n"; 
 
         $isCriteriaMet = true;
 
@@ -37,7 +37,7 @@ function calculateRewards(float $reward1, float $reward2, float $reward3, $playe
         if (!($rewardPerPerson1 > ($rewardPerPerson2 * 1.3))) {
             // Adjust rewards if criteria are not met
             $takeFromReward2 = $reward2 * 0.15;
-            $takeFromReward3 = $reward3 * 0.05;
+            $takeFromReward3 = $reward3 * 0.10;
           
 
             $reward2 -= $takeFromReward2; // Reduce 2nd place reward by 20%
@@ -53,16 +53,17 @@ function calculateRewards(float $reward1, float $reward2, float $reward3, $playe
       $i++;
     } while (!$isCriteriaMet);
     
+       $takeFromReward3 = 0;
     
     do {
         // Check if the 30% rule is maintained
         if (!($rewardPerPerson2 > $rewardPerPerson3 * 1.3)) {
+            $takeFromReward3 = $reward3 * 0.10;
             // Adjust rewards if criteria are not met
-            $reward2 += $reward3 * 0.10;
+            $reward2 += $takeFromReward3;
             
-            $reward3 -=  $reward3 * 0.10; // Reduce 3rd place reward by 10%
+            $reward3 -=  $takeFromReward3; // Reduce 3rd place reward by 10%
             
-            $rewardPerPerson1 = $reward1 / count($rank1);
             $rewardPerPerson2 = $reward2 / count($rank2);
             $rewardPerPerson3 = $reward3 / count($rank3);
             $isCriteriaMet = false;
@@ -122,5 +123,5 @@ foreach ($rewardedPlayers as $player) {
     $sum += $player['reward'];
 }
 
-echo "\n" . $sum;
-?>
+echo "\n Suma: " . $sum;
+
