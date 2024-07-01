@@ -107,11 +107,11 @@ $players = [
     ['name' => 'Player10', 'points' => 50, 'rank' => 1],
     ['name' => 'Player11', 'points' => 50, 'rank' => 1],
     ['name' => 'Player12', 'points' => 50, 'rank' => 1],
-    ['name' => 'Player13', 'points' => 48, 'rank' => 1],
+    ['name' => 'Player13', 'points' => 50, 'rank' => 1],
     ['name' => 'Player14', 'points' => 46, 'rank' => 2],
-    ['name' => 'Player15', 'points' => 45, 'rank' => 2],
+    ['name' => 'Player15', 'points' => 46, 'rank' => 2],
     ['name' => 'Player16', 'points' => 43, 'rank' => 3],
-    ['name' => 'Player17', 'points' => 42, 'rank' => 3]
+    ['name' => 'Player17', 'points' => 43, 'rank' => 3]
 ];
 
 $rewardedPlayers = calculateRewards($reward1, $reward2, $reward3, $players);
@@ -124,4 +124,3 @@ foreach ($rewardedPlayers as $player) {
 }
 
 echo "\n Suma: " . $sum;
-
