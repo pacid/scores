@@ -37,9 +37,9 @@ $scenario = $scenarios[$selected_scenario] ?? $scenarios['original'];
 
 $total_prize = $use_scenario_defaults ? $scenario['total'] : ($_POST['total_prize'] ?? $scenario['total']);
 $proportions_text = $use_scenario_defaults ? $scenario['proportions'] : ($_POST['proportions'] ?? $scenario['proportions']);
-$podium_rows = $use_scenario_defaults || !isset($_POST['rank_slots'], $_POST['rank_counts'])
+$podium_rows = $use_scenario_defaults || !isset($_POST['rank_counts'])
     ? podium_rows_from_ranks($scenario['ranks'])
-    : normalize_podium_rows((array) $_POST['rank_slots'], (array) $_POST['rank_counts']);
+    : normalize_podium_rows((array) $_POST['rank_counts']);
 
 $error = null;
 $ranks = [];
@@ -98,13 +98,13 @@ function podium_rows_from_ranks(string $ranks_text): array
     return $rows;
 }
 
-function normalize_podium_rows(array $rank_slots, array $rank_counts): array
+function normalize_podium_rows(array $rank_counts): array
 {
     $rows = [];
 
     for ($index = 0; $index < 3; $index++) {
         $rows[] = [
-            'rank' => (string) ($rank_slots[$index] ?? ($index + 1)),
+            'rank' => (string) ($index + 1),
             'count' => (string) ($rank_counts[$index] ?? 0),
         ];
     }
@@ -307,6 +307,18 @@ function ranks_from_podium_rows(array $rows): array
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
             gap: 12px;
+        }
+
+        .podium-place {
+            align-items: center;
+            background: #fbfcfd;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--ink);
+            display: flex;
+            font-weight: 800;
+            min-height: 48px;
+            padding: 12px 13px;
         }
 
         .button {
@@ -527,14 +539,8 @@ function ranks_from_podium_rows(array $rows): array
                     <?php foreach ($podium_rows as $index => $row): ?>
                         <div class="podium-row">
                             <div>
-                                <label for="rank_slot_<?php echo $index; ?>">Miejsce</label>
-                                <select id="rank_slot_<?php echo $index; ?>" name="rank_slots[]">
-                                    <?php for ($rank_option = 1; $rank_option <= 3; $rank_option++): ?>
-                                        <option value="<?php echo $rank_option; ?>" <?php echo (string) $row['rank'] === (string) $rank_option ? 'selected' : ''; ?>>
-                                            <?php echo $rank_option; ?>. miejsce
-                                        </option>
-                                    <?php endfor; ?>
-                                </select>
+                                <label>Miejsce</label>
+                                <div class="podium-place"><?php echo e((string) $row['rank']); ?>. miejsce</div>
                             </div>
                             <div>
                                 <label for="rank_count_<?php echo $index; ?>">Liczba osób</label>
