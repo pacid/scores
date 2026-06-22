@@ -124,7 +124,7 @@ function ranks_from_podium_rows(array $rows): array
             throw new InvalidArgumentException("Nieprawidłowa wartość miejsca: {$rank}");
         }
 
-        if (!ctype_digit($count)) {
+        if (!ctype_digit($count) || (int) $count < 1) {
             throw new InvalidArgumentException("Nieprawidłowa liczba osób: {$count}");
         }
 
@@ -539,7 +539,7 @@ function ranks_from_podium_rows(array $rows): array
                             <div>
                                 <label for="rank_count_<?php echo $index; ?>">Liczba osób</label>
                                 <select id="rank_count_<?php echo $index; ?>" name="rank_counts[]">
-                                    <?php for ($count_option = 0; $count_option <= 20; $count_option++): ?>
+                                    <?php for ($count_option = 1; $count_option <= 20; $count_option++): ?>
                                         <option value="<?php echo $count_option; ?>" <?php echo (string) $row['count'] === (string) $count_option ? 'selected' : ''; ?>>
                                             <?php echo $count_option; ?>
                                         </option>
