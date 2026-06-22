@@ -198,7 +198,8 @@ function ranks_from_podium_rows(array $rows): array
             font-size: clamp(2rem, 4vw, 3.8rem);
             line-height: 1;
             letter-spacing: 0;
-            max-width: 760px;
+            flex: 1;
+            max-width: none;
         }
 
         .layout {
