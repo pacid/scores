@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/prize_calculator.php';
 
+const MODE_SOCIAL = 'social';
+const MODE_RANKING = 'ranking';
+
 $scenarios = [
     'original' => [
         'label' => 'Przypadek bazowy',
@@ -37,9 +40,11 @@ $scenario = $scenarios[$selected_scenario] ?? $scenarios['original'];
 
 $total_prize = $use_scenario_defaults ? $scenario['total'] : ($_POST['total_prize'] ?? $scenario['total']);
 $proportions_text = $use_scenario_defaults ? $scenario['proportions'] : ($_POST['proportions'] ?? $scenario['proportions']);
+$mode = normalize_mode((string) ($_POST['mode'] ?? MODE_SOCIAL));
 $podium_rows = $use_scenario_defaults || !isset($_POST['rank_counts'])
     ? podium_rows_from_ranks($scenario['ranks'])
     : normalize_podium_rows((array) $_POST['rank_counts']);
+$display_podium_rows = podium_rows_for_display($podium_rows, $mode);
 
 $error = null;
 $ranks = [];
@@ -50,9 +55,17 @@ $total_paid = 0.0;
 
 try {
     $total_prize_number = (float) str_replace(',', '.', (string) $total_prize);
-    $ranks = ranks_from_podium_rows($podium_rows);
     $proportions = parse_proportions((string) $proportions_text);
-    $prizes = calculate_prizes($total_prize_number, $ranks, $proportions);
+
+    if ($mode === MODE_RANKING) {
+        $ranking_results = ranking_prize_results_from_podium_rows($total_prize_number, $podium_rows, $proportions);
+        $ranks = $ranking_results['ranks'];
+        $prizes = $ranking_results['prizes'];
+    } else {
+        $ranks = ranks_from_podium_rows($podium_rows, $mode);
+        $prizes = calculate_prizes($total_prize_number, $ranks, $proportions);
+    }
+
     $counts = rank_counts($ranks);
 
     foreach ($ranks as $rank) {
@@ -81,6 +94,11 @@ function persons_label(int $count): string
     }
 
     return 'osób';
+}
+
+function normalize_mode(string $mode): string
+{
+    return $mode === MODE_RANKING ? MODE_RANKING : MODE_SOCIAL;
 }
 
 function podium_rows_from_ranks(string $ranks_text): array
@@ -112,8 +130,31 @@ function normalize_podium_rows(array $rank_counts): array
     return $rows;
 }
 
-function ranks_from_podium_rows(array $rows): array
+function podium_rows_for_display(array $rows, string $mode): array
 {
+    if ($mode !== MODE_RANKING) {
+        return $rows;
+    }
+
+    $display_rows = [];
+    $occupied_places = 0;
+
+    foreach ($rows as $row) {
+        $count = (int) ($row['count'] ?? 0);
+        $row['rank'] = (string) ($occupied_places + 1);
+        $display_rows[] = $row;
+        $occupied_places += max(0, $count);
+    }
+
+    return $display_rows;
+}
+
+function ranks_from_podium_rows(array $rows, string $mode = MODE_SOCIAL): array
+{
+    if ($mode === MODE_RANKING) {
+        return ranking_ranks_from_podium_rows($rows);
+    }
+
     $ranks = [];
     $previous_empty_rank = null;
 
@@ -150,6 +191,140 @@ function ranks_from_podium_rows(array $rows): array
     }
 
     return $ranks;
+}
+
+function ranking_ranks_from_podium_rows(array $rows): array
+{
+    $ranks = [];
+    $previous_empty_group = null;
+    $occupied_places = 0;
+
+    foreach ($rows as $index => $row) {
+        $count = (string) ($row['count'] ?? '');
+        $group_number = $index + 1;
+
+        if (!ctype_digit($count) || (int) $count < 0) {
+            throw new InvalidArgumentException("Nieprawidłowa liczba osób: {$count}");
+        }
+
+        $count_number = (int) $count;
+
+        if ($count_number > 0 && $previous_empty_group !== null) {
+            throw new InvalidArgumentException("Nie można dodać graczy w {$group_number}. grupie, jeśli {$previous_empty_group}. grupa jest pusta.");
+        }
+
+        if ($count_number === 0) {
+            $previous_empty_group = $group_number;
+            continue;
+        }
+
+        $rank_number = $occupied_places + 1;
+        $occupied_places += $count_number;
+
+        if ($rank_number > 3) {
+            continue;
+        }
+
+        for ($player = 0; $player < $count_number; $player++) {
+            $ranks[] = $rank_number;
+        }
+    }
+
+    if ($ranks === []) {
+        throw new InvalidArgumentException('Podaj liczbę osób przy przynajmniej jednym miejscu punktowanym.');
+    }
+
+    return $ranks;
+}
+
+function ranking_prize_results_from_podium_rows(float $total_prize, array $rows, array $proportions): array
+{
+    if ($total_prize <= 0) {
+        throw new InvalidArgumentException('Suma nagród musi być większa od zera.');
+    }
+
+    $pools = ranking_prize_pools($total_prize, $proportions);
+    $ranks = [];
+    $prizes = [];
+    $previous_empty_group = null;
+    $occupied_places = 0;
+
+    foreach ($rows as $index => $row) {
+        $count = (string) ($row['count'] ?? '');
+        $group_number = $index + 1;
+
+        if (!ctype_digit($count) || (int) $count < 0) {
+            throw new InvalidArgumentException("Nieprawidłowa liczba osób: {$count}");
+        }
+
+        $count_number = (int) $count;
+
+        if ($count_number > 0 && $previous_empty_group !== null) {
+            throw new InvalidArgumentException("Nie można dodać graczy w {$group_number}. grupie, jeśli {$previous_empty_group}. grupa jest pusta.");
+        }
+
+        if ($count_number === 0) {
+            $previous_empty_group = $group_number;
+            continue;
+        }
+
+        $rank_number = $occupied_places + 1;
+        $occupied_places += $count_number;
+
+        if ($rank_number > 3) {
+            continue;
+        }
+
+        $consumed_pool = 0.0;
+
+        for ($place = $rank_number; $place < $rank_number + $count_number && $place <= 3; $place++) {
+            $consumed_pool += $pools[$place];
+        }
+
+        if ($consumed_pool <= 0) {
+            continue;
+        }
+
+        $prizes[$rank_number] = $consumed_pool / $count_number;
+
+        for ($player = 0; $player < $count_number; $player++) {
+            $ranks[] = $rank_number;
+        }
+    }
+
+    if ($ranks === []) {
+        throw new InvalidArgumentException('Podaj liczbę osób przy przynajmniej jednym miejscu punktowanym.');
+    }
+
+    return [
+        'ranks' => $ranks,
+        'prizes' => $prizes,
+    ];
+}
+
+function ranking_prize_pools(float $total_prize, array $proportions): array
+{
+    $total_weight = 0.0;
+
+    for ($place = 1; $place <= 3; $place++) {
+        if (!isset($proportions[$place])) {
+            throw new InvalidArgumentException("Brakuje proporcji dla miejsca {$place}.");
+        }
+
+        $total_weight += $proportions[$place];
+    }
+
+    if ($total_weight <= 0) {
+        throw new InvalidArgumentException('Suma proporcji musi być większa od zera.');
+    }
+
+    $pools = [];
+
+    for ($place = 1; $place <= 3; $place++) {
+        $pools[$place] = $total_prize * $proportions[$place] / $total_weight;
+    }
+
+    return $pools;
 }
 ?>
 <!doctype html>
@@ -196,7 +371,7 @@ function ranks_from_podium_rows(array $rows): array
             align-items: center;
             justify-content: space-between;
             gap: 18px;
-            margin-bottom: 26px;
+            margin-bottom: 14px;
         }
 
         h1,
@@ -212,6 +387,51 @@ function ranks_from_podium_rows(array $rows): array
             letter-spacing: 0;
             flex: 1;
             max-width: none;
+        }
+
+        .mode-toggle {
+            display: inline-grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 4px;
+            width: min(100%, 430px);
+            margin-bottom: 26px;
+            padding: 4px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: var(--surface);
+        }
+
+        .mode-toggle label {
+            color: inherit;
+            display: block;
+            font-size: inherit;
+            font-weight: inherit;
+            margin: 0;
+            text-transform: none;
+        }
+
+        .mode-toggle input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .mode-toggle span {
+            align-items: center;
+            border-radius: 6px;
+            color: var(--muted);
+            cursor: pointer;
+            display: flex;
+            font-weight: 800;
+            justify-content: center;
+            min-height: 40px;
+            padding: 8px 12px;
+            text-align: center;
+        }
+
+        .mode-toggle input:checked + span {
+            background: var(--accent);
+            color: #fff;
         }
 
         .layout {
@@ -331,6 +551,10 @@ function ranks_from_podium_rows(array $rows): array
             font-weight: 800;
             min-height: 48px;
             padding: 12px 13px;
+        }
+
+        .podium-place.is-outside-podium {
+            color: var(--muted);
         }
 
         .button {
@@ -538,8 +762,19 @@ function ranks_from_podium_rows(array $rows): array
             </button>
         </header>
 
+        <div class="mode-toggle" role="radiogroup" aria-label="Tryb algorytmu">
+            <label>
+                <input type="radio" name="mode" value="<?php echo MODE_SOCIAL; ?>" form="simulator-form" <?php echo $mode === MODE_SOCIAL ? 'checked' : ''; ?> data-mode-option>
+                <span>Tryb towarzyski</span>
+            </label>
+            <label>
+                <input type="radio" name="mode" value="<?php echo MODE_RANKING; ?>" form="simulator-form" <?php echo $mode === MODE_RANKING ? 'checked' : ''; ?> data-mode-option>
+                <span>Tryb rankingowy</span>
+            </label>
+        </div>
+
         <div class="layout">
-            <form class="panel" method="post">
+            <form id="simulator-form" class="panel" method="post">
                 <input type="hidden" name="scenario" value="<?php echo e((string) $selected_scenario); ?>">
 
                 <div class="field">
@@ -548,11 +783,11 @@ function ranks_from_podium_rows(array $rows): array
                 </div>
 
                 <div class="podium" aria-label="Podium">
-                    <?php foreach ($podium_rows as $index => $row): ?>
+                    <?php foreach ($display_podium_rows as $index => $row): ?>
                         <div class="podium-row">
                             <div>
                                 <label>Miejsce</label>
-                                <div class="podium-place"><?php echo e((string) $row['rank']); ?>. miejsce</div>
+                                <div class="podium-place <?php echo (int) $row['rank'] > 3 ? 'is-outside-podium' : ''; ?>" data-place-label><?php echo e((string) $row['rank']); ?>. miejsce</div>
                             </div>
                             <div>
                                 <label for="rank_count_<?php echo $index; ?>">Liczba osób</label>
@@ -652,6 +887,24 @@ function ranks_from_podium_rows(array $rows): array
         });
 
         const rankCountSelects = Array.from(document.querySelectorAll('[data-rank-count]'));
+        const placeLabels = Array.from(document.querySelectorAll('[data-place-label]'));
+        const modeOptions = Array.from(document.querySelectorAll('[data-mode-option]'));
+
+        function selectedMode() {
+            return modeOptions.find((option) => option.checked)?.value ?? '<?php echo MODE_SOCIAL; ?>';
+        }
+
+        function syncPlaceLabels() {
+            let occupiedPlaces = 0;
+            const isRankingMode = selectedMode() === '<?php echo MODE_RANKING; ?>';
+
+            placeLabels.forEach((label, index) => {
+                const rank = isRankingMode ? occupiedPlaces + 1 : index + 1;
+                label.textContent = `${rank}. miejsce`;
+                label.classList.toggle('is-outside-podium', rank > 3);
+                occupiedPlaces += Number.parseInt(rankCountSelects[index]?.value ?? '0', 10);
+            });
+        }
 
         function syncRankCountSelects() {
             rankCountSelects.forEach((select, index) => {
@@ -664,10 +917,16 @@ function ranks_from_podium_rows(array $rows): array
 
                 select.disabled = shouldDisable;
             });
+
+            syncPlaceLabels();
         }
 
         rankCountSelects.forEach((select) => {
             select.addEventListener('change', syncRankCountSelects);
+        });
+
+        modeOptions.forEach((option) => {
+            option.addEventListener('change', syncRankCountSelects);
         });
 
         syncRankCountSelects();
