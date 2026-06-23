@@ -115,6 +115,7 @@ function normalize_podium_rows(array $rank_counts): array
 function ranks_from_podium_rows(array $rows): array
 {
     $ranks = [];
+    $previous_empty_rank = null;
 
     foreach ($rows as $row) {
         $rank = (string) ($row['rank'] ?? '');
@@ -124,12 +125,23 @@ function ranks_from_podium_rows(array $rows): array
             throw new InvalidArgumentException("Nieprawidłowa wartość miejsca: {$rank}");
         }
 
-        if (!ctype_digit($count) || (int) $count < 1) {
+        if (!ctype_digit($count) || (int) $count < 0) {
             throw new InvalidArgumentException("Nieprawidłowa liczba osób: {$count}");
         }
 
-        for ($player = 0; $player < (int) $count; $player++) {
-            $ranks[] = (int) $rank;
+        $rank_number = (int) $rank;
+        $count_number = (int) $count;
+
+        if ($count_number > 0 && $previous_empty_rank !== null) {
+            throw new InvalidArgumentException("Nie można dodać graczy na {$rank_number}. miejscu, jeśli {$previous_empty_rank}. miejsce jest puste.");
+        }
+
+        if ($count_number === 0) {
+            $previous_empty_rank = $rank_number;
+        }
+
+        for ($player = 0; $player < $count_number; $player++) {
+            $ranks[] = $rank_number;
         }
     }
 
@@ -544,8 +556,8 @@ function ranks_from_podium_rows(array $rows): array
                             </div>
                             <div>
                                 <label for="rank_count_<?php echo $index; ?>">Liczba osób</label>
-                                <select id="rank_count_<?php echo $index; ?>" name="rank_counts[]">
-                                    <?php for ($count_option = 1; $count_option <= 20; $count_option++): ?>
+                                <select id="rank_count_<?php echo $index; ?>" name="rank_counts[]" data-rank-count>
+                                    <?php for ($count_option = 0; $count_option <= 20; $count_option++): ?>
                                         <option value="<?php echo $count_option; ?>" <?php echo (string) $row['count'] === (string) $count_option ? 'selected' : ''; ?>>
                                             <?php echo $count_option; ?>
                                         </option>
@@ -638,6 +650,27 @@ function ranks_from_podium_rows(array $rows): array
                 settingsDialog.close();
             }
         });
+
+        const rankCountSelects = Array.from(document.querySelectorAll('[data-rank-count]'));
+
+        function syncRankCountSelects() {
+            rankCountSelects.forEach((select, index) => {
+                const previousSelect = rankCountSelects[index - 1];
+                const shouldDisable = index > 0 && previousSelect?.value === '0';
+
+                if (shouldDisable) {
+                    select.value = '0';
+                }
+
+                select.disabled = shouldDisable;
+            });
+        }
+
+        rankCountSelects.forEach((select) => {
+            select.addEventListener('change', syncRankCountSelects);
+        });
+
+        syncRankCountSelects();
     </script>
 </body>
 </html>
