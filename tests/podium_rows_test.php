@@ -181,6 +181,99 @@ function expected_invalid_combo_message(int $first, int $second, int $third): st
     return 'grupa jest pusta';
 }
 
+function expected_invalid_social_combo_message(int $first, int $second, int $third): string
+{
+    if ($first + $second + $third === 0) {
+        return 'przynajmniej jednym miejscu';
+    }
+
+    if ($second === 0 && $third > 0) {
+        return '2. miejsce jest puste';
+    }
+
+    if ($first === 0 && $second > 0) {
+        return '1. miejsce jest puste';
+    }
+
+    return 'miejsce jest puste';
+}
+
+function payout_rows_difference_cents(float $total_prize, array $counts, array $prizes): int
+{
+    $rows = payout_rows_from_prizes($total_prize, $counts, $prizes);
+    $seen_ranks = [];
+    $actual_cents = payout_rows_total_cents($rows);
+
+    foreach ($rows as $row) {
+        if (isset($seen_ranks[$row['rank']])) {
+            fail_test('duplicate payout row for rank ' . $row['rank']);
+        }
+
+        $seen_ranks[$row['rank']] = true;
+    }
+
+    return $actual_cents - money_to_cents($total_prize);
+}
+
+function gcd_int(int $left, int $right): int
+{
+    $left = abs($left);
+    $right = abs($right);
+
+    while ($right !== 0) {
+        $next = $left % $right;
+        $left = $right;
+        $right = $next;
+    }
+
+    return $left;
+}
+
+function payout_count_gcd(array $counts): int
+{
+    $gcd = 0;
+
+    foreach ($counts as $count) {
+        $count = (int) $count;
+
+        if ($count <= 0) {
+            continue;
+        }
+
+        $gcd = $gcd === 0 ? $count : gcd_int($gcd, $count);
+    }
+
+    return $gcd;
+}
+
+function minimal_single_amount_difference_cents(float $total_prize, array $counts): int
+{
+    $gcd = payout_count_gcd($counts);
+
+    if ($gcd === 0) {
+        return 0;
+    }
+
+    $remainder = money_to_cents($total_prize) % $gcd;
+
+    return min($remainder, $gcd - $remainder);
+}
+
+function expect_minimal_rounding_difference(string $label, float $total_prize, array $counts, array $prizes, ?int $expected_difference_cents = null): void
+{
+    $actual_difference = payout_rows_difference_cents($total_prize, $counts, $prizes);
+
+    if ($expected_difference_cents !== null && $actual_difference !== $expected_difference_cents) {
+        fail_test("{$label}: expected rounding difference {$expected_difference_cents} cents, got {$actual_difference} cents");
+    }
+
+    $minimal_difference = minimal_single_amount_difference_cents($total_prize, $counts);
+
+    if (abs($actual_difference) !== $minimal_difference) {
+        fail_test("{$label}: expected minimal rounding difference {$minimal_difference} cents, got {$actual_difference} cents");
+    }
+}
+
 expect_ranks('allows all players on first place', podium_test_rows(5, 0, 0), [1, 1, 1, 1, 1]);
 expect_ranks('allows first and second place without third', podium_test_rows(2, 3, 0), [1, 1, 2, 2, 2]);
 expect_ranks('allows a full podium', podium_test_rows(1, 1, 1), [1, 2, 3]);
@@ -201,6 +294,8 @@ expect_ranking_prizes('ranking dead heat splits all pool between two tied leader
 expect_ranking_prizes('ranking dead heat uses natural 3-2-1 pools for full podium', podium_test_rows(2, 1, 2), [1, 1, 3], [1 => 800.0 * 5 / 12, 3 => 800.0 / 6]);
 expect_ranking_prizes('ranking dead heat splits second and third natural pools', podium_test_rows(1, 2, 1), [1, 2, 2], [1 => 400.0, 2 => 200.0]);
 expect_ranking_prizes('ranking dead heat splits all podium pools', podium_test_rows(3, 1, 0), [1, 1, 1], [1 => 800.0 / 3]);
+expect_minimal_rounding_difference('social screenshot rounding closes exactly', 800.0, [1 => 10, 2 => 1, 3 => 1], [1 => 74.2268041237, 2 => 32.9896907216, 3 => 24.7422680412], 0);
+expect_minimal_rounding_difference('ranking three tied leaders keeps one rank amount', 800.0, [1 => 3], [1 => 800.0 / 3], 1);
 
 for ($first = 0; $first <= 20; $first++) {
     for ($second = 0; $second <= 20; $second++) {
@@ -215,6 +310,26 @@ for ($first = 0; $first <= 20; $first++) {
 
             $expected = expected_natural_dead_heat($first, $second, $third);
             expect_ranking_prizes($label, $rows, $expected['ranks'], $expected['prizes']);
+            expect_minimal_rounding_difference($label, 800.0, rank_counts($expected['ranks']), $expected['prizes']);
+        }
+    }
+}
+
+for ($first = 0; $first <= 20; $first++) {
+    for ($second = 0; $second <= 20; $second++) {
+        for ($third = 0; $third <= 20; $third++) {
+            $label = "social dropdown combo {$first}/{$second}/{$third}";
+            $rows = podium_test_rows($first, $second, $third);
+
+            if (!is_valid_ranking_combo($first, $second, $third)) {
+                expect_invalid_rows($label, $rows, expected_invalid_social_combo_message($first, $second, $third), MODE_SOCIAL);
+                continue;
+            }
+
+            $ranks = ranks_from_podium_rows($rows, MODE_SOCIAL);
+            $counts = rank_counts($ranks);
+            $prizes = calculate_prizes(800.0, $ranks, [1 => 9, 2 => 4, 3 => 3]);
+            expect_minimal_rounding_difference($label, 800.0, $counts, $prizes);
         }
     }
 }

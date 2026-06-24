@@ -51,7 +51,9 @@ $ranks = [];
 $proportions = [];
 $prizes = [];
 $counts = [];
+$payout_rows = [];
 $total_paid = 0.0;
+$rounding_notice = '';
 
 try {
     $total_prize_number = (float) str_replace(',', '.', (string) $total_prize);
@@ -67,10 +69,11 @@ try {
     }
 
     $counts = rank_counts($ranks);
+    $payout_rows = payout_rows_from_prizes($total_prize_number, $counts, $prizes);
+    $total_paid_cents = payout_rows_total_cents($payout_rows);
+    $rounding_notice = rounding_notice($total_paid_cents - money_to_cents($total_prize_number));
 
-    foreach ($ranks as $rank) {
-        $total_paid += $prizes[$rank];
-    }
+    $total_paid = $total_paid_cents / 100;
 } catch (InvalidArgumentException $exception) {
     $error = $exception->getMessage();
 }
@@ -147,6 +150,195 @@ function podium_rows_for_display(array $rows, string $mode): array
     }
 
     return $display_rows;
+}
+
+function payout_rows_from_prizes(float $total_prize, array $counts, array $prizes): array
+{
+    $total_cents = money_to_cents($total_prize);
+    $rank_rows = [];
+
+    foreach ($counts as $rank => $count) {
+        $rank = (int) $rank;
+        $count = (int) $count;
+
+        if ($count <= 0 || !isset($prizes[$rank])) {
+            continue;
+        }
+
+        $rank_rows[] = [
+            'rank' => $rank,
+            'count' => $count,
+            'exact_cents' => $prizes[$rank] * 100,
+        ];
+    }
+
+    if ($rank_rows === []) {
+        return [];
+    }
+
+    $single_amount_rows = payout_rows_with_single_amount_per_rank($total_cents, $rank_rows);
+
+    if ($single_amount_rows !== null) {
+        return $single_amount_rows;
+    }
+
+    return rounded_payout_rows($rank_rows);
+}
+
+function payout_rows_with_single_amount_per_rank(int $total_cents, array $rank_rows): ?array
+{
+    $rounded_total = 0;
+    $rounded_cents = [];
+
+    foreach ($rank_rows as $index => $row) {
+        $rounded_cents[$index] = (int) round($row['exact_cents']);
+        $rounded_total += $rounded_cents[$index] * $row['count'];
+    }
+
+    $residual = $total_cents - $rounded_total;
+    $correction_limit = max(30, abs($residual) + 5);
+    $selected = corrected_rank_cents($rank_rows, $rounded_cents, $residual, $correction_limit);
+
+    if ($selected === null) {
+        return null;
+    }
+
+    $payout_rows = [];
+
+    foreach ($rank_rows as $index => $row) {
+        $payout_rows[] = [
+            'rank' => $row['rank'],
+            'count' => $row['count'],
+            'prize' => $selected[$index] / 100,
+        ];
+    }
+
+    return $payout_rows;
+}
+
+function corrected_rank_cents(array $rank_rows, array $rounded_cents, int $residual, int $correction_limit): ?array
+{
+    $best_difference = null;
+    $best_error = null;
+    $selected = null;
+    $row_count = count($rank_rows);
+
+    if ($row_count === 1) {
+        for ($first_delta = -$correction_limit; $first_delta <= $correction_limit; $first_delta++) {
+            $candidate = [$rounded_cents[0] + $first_delta];
+            update_best_rank_cents($rank_rows, $candidate, $residual, $best_difference, $best_error, $selected, $correction_limit);
+        }
+
+        return $selected;
+    }
+
+    if ($row_count === 2) {
+        for ($first_delta = -$correction_limit; $first_delta <= $correction_limit; $first_delta++) {
+            for ($second_delta = -$correction_limit; $second_delta <= $correction_limit; $second_delta++) {
+                $candidate = [$rounded_cents[0] + $first_delta, $rounded_cents[1] + $second_delta];
+                update_best_rank_cents($rank_rows, $candidate, $residual, $best_difference, $best_error, $selected, $correction_limit);
+            }
+        }
+
+        return $selected;
+    }
+
+    for ($first_delta = -$correction_limit; $first_delta <= $correction_limit; $first_delta++) {
+        for ($second_delta = -$correction_limit; $second_delta <= $correction_limit; $second_delta++) {
+            $remaining = $residual - $rank_rows[0]['count'] * $first_delta - $rank_rows[1]['count'] * $second_delta;
+            $third_delta_floor = (int) floor($remaining / $rank_rows[2]['count']);
+            $third_deltas = array_unique([$third_delta_floor, $third_delta_floor + 1]);
+
+            foreach ($third_deltas as $third_delta) {
+                $candidate = [
+                    $rounded_cents[0] + $first_delta,
+                    $rounded_cents[1] + $second_delta,
+                    $rounded_cents[2] + $third_delta,
+                ];
+                update_best_rank_cents($rank_rows, $candidate, $residual, $best_difference, $best_error, $selected, $correction_limit);
+            }
+        }
+    }
+
+    return $selected;
+}
+
+function update_best_rank_cents(
+    array $rank_rows,
+    array $candidate,
+    int $residual,
+    ?int &$best_difference,
+    ?float &$best_error,
+    ?array &$selected,
+    int $correction_limit
+): void
+{
+    $error = 0.0;
+    $correction_total = 0;
+
+    foreach ($candidate as $index => $candidate_cents) {
+        if ($candidate_cents < 0 || abs($candidate_cents - round($rank_rows[$index]['exact_cents'])) > $correction_limit) {
+            return;
+        }
+
+        $correction_total += ($candidate_cents - (int) round($rank_rows[$index]['exact_cents'])) * $rank_rows[$index]['count'];
+        $error += abs($candidate_cents - $rank_rows[$index]['exact_cents']) * $rank_rows[$index]['count'];
+    }
+
+    $difference = abs($residual - $correction_total);
+
+    if ($best_difference === null || $difference < $best_difference || ($difference === $best_difference && ($best_error === null || $error < $best_error))) {
+        $best_difference = $difference;
+        $best_error = $error;
+        $selected = $candidate;
+    }
+}
+
+function rounded_payout_rows(array $rank_rows): array
+{
+    $payout_rows = [];
+
+    foreach ($rank_rows as $row) {
+        $payout_rows[] = [
+            'rank' => $row['rank'],
+            'count' => $row['count'],
+            'prize' => round($row['exact_cents']) / 100,
+        ];
+    }
+
+    return $payout_rows;
+}
+
+function payout_rows_total_cents(array $payout_rows): int
+{
+    $total = 0;
+
+    foreach ($payout_rows as $row) {
+        $total += money_to_cents($row['prize']) * $row['count'];
+    }
+
+    return $total;
+}
+
+function rounding_notice(int $difference_cents): string
+{
+    if ($difference_cents === 0) {
+        return 'Zaokrąglenia: widoczne kwoty sumują się dokładnie do puli nagród.';
+    }
+
+    return 'Zaokrąglenia: saldo względem puli wynosi ' . format_signed_pln_from_cents($difference_cents) . '. Zachowujemy tę samą kwotę dla osób z tego samego miejsca.';
+}
+
+function money_to_cents(float $amount): int
+{
+    return (int) round($amount * 100);
+}
+
+function format_signed_pln_from_cents(int $cents): string
+{
+    $sign = $cents > 0 ? '+' : '-';
+
+    return $sign . format_pln(abs($cents) / 100);
 }
 
 function ranks_from_podium_rows(array $rows, string $mode = MODE_SOCIAL): array
@@ -635,6 +827,12 @@ function ranking_prize_pools(float $total_prize, int $paid_places): array
             color: var(--accent);
         }
 
+        .settings-note {
+            color: var(--muted);
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+
         .results {
             display: grid;
             gap: 18px;
@@ -832,6 +1030,9 @@ function ranking_prize_pools(float $total_prize, int $paid_places): array
                         <div class="field">
                             <label for="proportions">Proporcje rang</label>
                             <input id="proportions" name="proportions" value="<?php echo e((string) $proportions_text); ?>" required>
+                            <?php if ($rounding_notice !== ''): ?>
+                                <p class="settings-note"><?php echo e($rounding_notice); ?></p>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </dialog>
@@ -864,10 +1065,10 @@ function ranking_prize_pools(float $total_prize, int $paid_places): array
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($counts as $rank => $count): ?>
+                                <?php foreach ($payout_rows as $row): ?>
                                     <tr>
-                                        <td><?php echo e((string) $count); ?> <?php echo persons_label((int) $count); ?> na msc. <?php echo e((string) $rank); ?></td>
-                                        <td><?php echo format_pln($prizes[$rank]); ?></td>
+                                        <td><?php echo e((string) $row['count']); ?> <?php echo persons_label((int) $row['count']); ?> na msc. <?php echo e((string) $row['rank']); ?></td>
+                                        <td><?php echo format_pln($row['prize']); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
