@@ -55,13 +55,13 @@ $total_paid = 0.0;
 
 try {
     $total_prize_number = (float) str_replace(',', '.', (string) $total_prize);
-    $proportions = parse_proportions((string) $proportions_text);
 
     if ($mode === MODE_RANKING) {
-        $ranking_results = ranking_prize_results_from_podium_rows($total_prize_number, $podium_rows, $proportions);
+        $ranking_results = ranking_prize_results_from_podium_rows($total_prize_number, $podium_rows);
         $ranks = $ranking_results['ranks'];
         $prizes = $ranking_results['prizes'];
     } else {
+        $proportions = parse_proportions((string) $proportions_text);
         $ranks = ranks_from_podium_rows($podium_rows, $mode);
         $prizes = calculate_prizes($total_prize_number, $ranks, $proportions);
     }
@@ -143,7 +143,7 @@ function podium_rows_for_display(array $rows, string $mode): array
         $count = (int) ($row['count'] ?? 0);
         $row['rank'] = (string) ($occupied_places + 1);
         $display_rows[] = $row;
-        $occupied_places += max(0, $count);
+        $occupied_places += max(1, $count);
     }
 
     return $display_rows;
@@ -237,17 +237,14 @@ function ranking_ranks_from_podium_rows(array $rows): array
     return $ranks;
 }
 
-function ranking_prize_results_from_podium_rows(float $total_prize, array $rows, array $proportions): array
+function ranking_prize_results_from_podium_rows(float $total_prize, array $rows): array
 {
     if ($total_prize <= 0) {
         throw new InvalidArgumentException('Suma nagród musi być większa od zera.');
     }
 
-    $pools = ranking_prize_pools($total_prize, $proportions);
-    $ranks = [];
-    $prizes = [];
+    $total_players = 0;
     $previous_empty_group = null;
-    $occupied_places = 0;
 
     foreach ($rows as $index => $row) {
         $count = (string) ($row['count'] ?? '');
@@ -268,16 +265,37 @@ function ranking_prize_results_from_podium_rows(float $total_prize, array $rows,
             continue;
         }
 
+        $total_players += $count_number;
+    }
+
+    if ($total_players === 0) {
+        throw new InvalidArgumentException('Podaj liczbę osób przy przynajmniej jednym miejscu punktowanym.');
+    }
+
+    $paid_places = min(3, $total_players);
+    $pools = ranking_prize_pools($total_prize, $paid_places);
+    $ranks = [];
+    $prizes = [];
+    $occupied_places = 0;
+
+    foreach ($rows as $row) {
+        $count = (string) ($row['count'] ?? '');
+        $count_number = (int) $count;
+
+        if ($count_number === 0) {
+            continue;
+        }
+
         $rank_number = $occupied_places + 1;
         $occupied_places += $count_number;
 
-        if ($rank_number > 3) {
+        if ($rank_number > $paid_places) {
             continue;
         }
 
         $consumed_pool = 0.0;
 
-        for ($place = $rank_number; $place < $rank_number + $count_number && $place <= 3; $place++) {
+        for ($place = $rank_number; $place < $rank_number + $count_number && $place <= $paid_places; $place++) {
             $consumed_pool += $pools[$place];
         }
 
@@ -302,26 +320,18 @@ function ranking_prize_results_from_podium_rows(float $total_prize, array $rows,
     ];
 }
 
-function ranking_prize_pools(float $total_prize, array $proportions): array
+function ranking_prize_pools(float $total_prize, int $paid_places): array
 {
-    $total_weight = 0.0;
-
-    for ($place = 1; $place <= 3; $place++) {
-        if (!isset($proportions[$place])) {
-            throw new InvalidArgumentException("Brakuje proporcji dla miejsca {$place}.");
-        }
-
-        $total_weight += $proportions[$place];
-    }
-
-    if ($total_weight <= 0) {
-        throw new InvalidArgumentException('Suma proporcji musi być większa od zera.');
+    if ($paid_places < 1 || $paid_places > 3) {
+        throw new InvalidArgumentException('Liczba miejsc punktowanych musi być od 1 do 3.');
     }
 
     $pools = [];
+    $total_weight = $paid_places * ($paid_places + 1) / 2;
 
-    for ($place = 1; $place <= 3; $place++) {
-        $pools[$place] = $total_prize * $proportions[$place] / $total_weight;
+    for ($place = 1; $place <= $paid_places; $place++) {
+        $weight = $paid_places - $place + 1;
+        $pools[$place] = $total_prize * $weight / $total_weight;
     }
 
     return $pools;
@@ -902,7 +912,7 @@ function ranking_prize_pools(float $total_prize, array $proportions): array
                 const rank = isRankingMode ? occupiedPlaces + 1 : index + 1;
                 label.textContent = `${rank}. miejsce`;
                 label.classList.toggle('is-outside-podium', rank > 3);
-                occupiedPlaces += Number.parseInt(rankCountSelects[index]?.value ?? '0', 10);
+                occupiedPlaces += Math.max(1, Number.parseInt(rankCountSelects[index]?.value ?? '0', 10));
             });
         }
 

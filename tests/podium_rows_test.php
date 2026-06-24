@@ -64,13 +64,20 @@ function expect_display_ranks(string $label, array $rows, array $expected, strin
 function expect_ranking_prizes(string $label, array $rows, array $expected_ranks, array $expected_prizes): void
 {
     try {
-        $actual = ranking_prize_results_from_podium_rows(800.0, $rows, [1 => 9, 2 => 4, 3 => 3]);
+        $actual = ranking_prize_results_from_podium_rows(800.0, $rows);
     } catch (Throwable $exception) {
         fail_test("{$label}: unexpected exception: {$exception->getMessage()}");
     }
 
     if ($actual['ranks'] !== $expected_ranks) {
         fail_test("{$label}: expected ranks " . json_encode($expected_ranks) . ', got ' . json_encode($actual['ranks']));
+    }
+
+    ksort($actual['prizes']);
+    ksort($expected_prizes);
+
+    if (array_keys($actual['prizes']) !== array_keys($expected_prizes)) {
+        fail_test("{$label}: expected prize ranks " . json_encode(array_keys($expected_prizes)) . ', got ' . json_encode(array_keys($actual['prizes'])));
     }
 
     foreach ($expected_prizes as $rank => $expected_prize) {
@@ -80,6 +87,98 @@ function expect_ranking_prizes(string $label, array $rows, array $expected_ranks
             fail_test("{$label}: expected prize for rank {$rank} {$expected_prize}, got " . json_encode($actual_prize));
         }
     }
+}
+
+function expect_invalid_ranking_prizes(string $label, array $rows, string $expected_message_part): void
+{
+    try {
+        ranking_prize_results_from_podium_rows(800.0, $rows);
+    } catch (InvalidArgumentException $exception) {
+        if (!str_contains($exception->getMessage(), $expected_message_part)) {
+            fail_test("{$label}: unexpected exception message: {$exception->getMessage()}");
+        }
+
+        return;
+    }
+
+    fail_test("{$label}: expected InvalidArgumentException");
+}
+
+function natural_dead_heat_pool(float $total_prize, int $paid_places, int $place): float
+{
+    $total_weight = $paid_places * ($paid_places + 1) / 2;
+    $weight = $paid_places - $place + 1;
+
+    return $total_prize * $weight / $total_weight;
+}
+
+function expected_natural_dead_heat(int $first, int $second, int $third): array
+{
+    $counts = [$first, $second, $third];
+    $paid_places = min(3, array_sum($counts));
+    $ranks = [];
+    $prizes = [];
+    $occupied_places = 0;
+
+    foreach ($counts as $count) {
+        if ($count === 0) {
+            continue;
+        }
+
+        $rank = $occupied_places + 1;
+        $occupied_places += $count;
+
+        if ($rank > $paid_places) {
+            continue;
+        }
+
+        $consumed_pool = 0.0;
+
+        for ($place = $rank; $place < $rank + $count && $place <= $paid_places; $place++) {
+            $consumed_pool += natural_dead_heat_pool(800.0, $paid_places, $place);
+        }
+
+        $prizes[$rank] = $consumed_pool / $count;
+
+        for ($player = 0; $player < $count; $player++) {
+            $ranks[] = $rank;
+        }
+    }
+
+    return [
+        'ranks' => $ranks,
+        'prizes' => $prizes,
+    ];
+}
+
+function is_valid_ranking_combo(int $first, int $second, int $third): bool
+{
+    if ($first + $second + $third === 0) {
+        return false;
+    }
+
+    if ($first === 0 && ($second > 0 || $third > 0)) {
+        return false;
+    }
+
+    return !($second === 0 && $third > 0);
+}
+
+function expected_invalid_combo_message(int $first, int $second, int $third): string
+{
+    if ($first + $second + $third === 0) {
+        return 'miejscu punktowanym';
+    }
+
+    if ($second === 0 && $third > 0) {
+        return '2. grupa jest pusta';
+    }
+
+    if ($first === 0 && $second > 0) {
+        return '1. grupa jest pusta';
+    }
+
+    return 'grupa jest pusta';
 }
 
 expect_ranks('allows all players on first place', podium_test_rows(5, 0, 0), [1, 1, 1, 1, 1]);
@@ -94,11 +193,30 @@ expect_ranks('ranking skips second place after two leaders', podium_test_rows(2,
 expect_ranks('ranking skips third place after a second-place tie', podium_test_rows(1, 2, 1), [1, 2, 2], MODE_RANKING);
 expect_ranks('ranking pays only the tied leaders when they fill the podium', podium_test_rows(3, 1, 0), [1, 1, 1], MODE_RANKING);
 expect_display_ranks('ranking display follows bookmaker places', podium_test_rows(2, 1, 2), ['1', '3', '4'], MODE_RANKING);
+expect_display_ranks('ranking display advances empty trailing groups', podium_test_rows(2, 0, 0), ['1', '3', '4'], MODE_RANKING);
 expect_display_ranks('social display keeps consecutive places', podium_test_rows(2, 1, 2), ['1', '2', '3'], MODE_SOCIAL);
 expect_invalid_rows('ranking rejects occupied group after an empty group', podium_test_rows(2, 0, 1), '2. grupa jest pusta', MODE_RANKING);
 expect_invalid_rows('ranking rejects no paid places', podium_test_rows(0, 0, 0), 'miejscu punktowanym', MODE_RANKING);
-expect_ranking_prizes('ranking dead heat splits first and second pools', podium_test_rows(2, 1, 2), [1, 1, 3], [1 => 325.0, 3 => 150.0]);
-expect_ranking_prizes('ranking dead heat splits second and third pools', podium_test_rows(1, 2, 1), [1, 2, 2], [1 => 450.0, 2 => 175.0]);
+expect_ranking_prizes('ranking dead heat splits all pool between two tied leaders when nobody is behind them', podium_test_rows(2, 0, 0), [1, 1], [1 => 400.0]);
+expect_ranking_prizes('ranking dead heat uses natural 3-2-1 pools for full podium', podium_test_rows(2, 1, 2), [1, 1, 3], [1 => 800.0 * 5 / 12, 3 => 800.0 / 6]);
+expect_ranking_prizes('ranking dead heat splits second and third natural pools', podium_test_rows(1, 2, 1), [1, 2, 2], [1 => 400.0, 2 => 200.0]);
 expect_ranking_prizes('ranking dead heat splits all podium pools', podium_test_rows(3, 1, 0), [1, 1, 1], [1 => 800.0 / 3]);
+
+for ($first = 0; $first <= 20; $first++) {
+    for ($second = 0; $second <= 20; $second++) {
+        for ($third = 0; $third <= 20; $third++) {
+            $label = "ranking dropdown combo {$first}/{$second}/{$third}";
+            $rows = podium_test_rows($first, $second, $third);
+
+            if (!is_valid_ranking_combo($first, $second, $third)) {
+                expect_invalid_ranking_prizes($label, $rows, expected_invalid_combo_message($first, $second, $third));
+                continue;
+            }
+
+            $expected = expected_natural_dead_heat($first, $second, $third);
+            expect_ranking_prizes($label, $rows, $expected['ranks'], $expected['prizes']);
+        }
+    }
+}
 
 echo 'Podium row tests passed.' . PHP_EOL;
